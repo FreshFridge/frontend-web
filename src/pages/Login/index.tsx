@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
+import AppIcon from "../../components/AppIcon";
+import AuthSupport from "../../components/AuthSupport";
 import { useAuth } from "../../store/AuthContext";
 
 function Login() {
@@ -59,7 +61,17 @@ function Login() {
       navigate("/", { replace: true });
     } catch (error) {
       console.log(error);
-      setErrors((current) => ({ ...current, form: t("loginFailed") }));
+      const responseMessage = (
+        error as {
+          response?: { data?: { error?: string; message?: string } };
+        }
+      ).response?.data;
+      const authError = responseMessage?.error || responseMessage?.message || "";
+      const formError = authError.toLowerCase().includes("blocked")
+        ? t("userBlockedLogin")
+        : t("loginFailed");
+
+      setErrors((current) => ({ ...current, form: formError }));
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +81,7 @@ function Login() {
     <main className="login-page">
       <section className="card login-card">
         <div className="login-brand">
-          <span className="brand-mark">FF</span>
+          <AppIcon className="app-icon-large" />
           <h1>FreshFridge</h1>
           <p className="muted">{t("loginSubtitle")}</p>
         </div>
@@ -143,6 +155,7 @@ function Login() {
           {t("dontHaveAccount")} <Link to="/register">{t("register")}</Link>
         </p>
       </section>
+      <AuthSupport />
     </main>
   );
 }

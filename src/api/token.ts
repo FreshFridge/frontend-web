@@ -1,8 +1,10 @@
 const TOKEN_KEY = "token";
 
 type TokenPayload = {
+  email?: string;
   role?: string;
   user?: {
+    email?: string;
     role?: string;
   };
 };
@@ -46,6 +48,11 @@ export const getTokenPayload = (): TokenPayload | null => {
 export const getUserRole = () => {
   const payload = getTokenPayload();
   return payload?.role ?? payload?.user?.role ?? null;
+};
+
+export const getUserEmail = () => {
+  const payload = getTokenPayload();
+  return payload?.email ?? payload?.user?.email ?? null;
 };
 
 export const isAdmin = () => getUserRole() === "admin";

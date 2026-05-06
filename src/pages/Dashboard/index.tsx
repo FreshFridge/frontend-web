@@ -215,11 +215,6 @@ function Dashboard() {
         <p>{t("dashboardSubtitle")}</p>
       </header>
 
-      <section className="card card-soft">
-        <h2>{t("welcomeTitle")}</h2>
-        <p className="muted">{t("welcomeText")}</p>
-      </section>
-
       <section className="grid stats-grid">
         <article className="card stat-card">
           <span className="stat-label">{t("products")}</span>

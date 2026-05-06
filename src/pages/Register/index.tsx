@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { register } from "../../api/auth";
+import AppIcon from "../../components/AppIcon";
+import AuthSupport from "../../components/AuthSupport";
 import { useAuth } from "../../store/AuthContext";
 import {
   getCountryOptions,
@@ -113,7 +115,7 @@ function Register() {
     <main className="login-page">
       <section className="card login-card">
         <div className="login-brand">
-          <span className="brand-mark">FF</span>
+          <AppIcon className="app-icon-large" />
           <h1>{t("register")}</h1>
           <p className="muted">{t("registerSubtitle")}</p>
         </div>
@@ -262,6 +264,7 @@ function Register() {
           {t("alreadyHaveAccount")} <Link to="/login">{t("login")}</Link>
         </p>
       </section>
+      <AuthSupport />
     </main>
   );
 }

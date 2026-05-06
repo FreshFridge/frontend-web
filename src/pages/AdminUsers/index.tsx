@@ -14,10 +14,17 @@ type AdminUser = {
   email: string;
   role: UserRole;
   isBlocked?: boolean;
+  is_blocked?: boolean;
 };
 
-const getItems = <T,>(data: T[] | { items?: T[] }) => {
-  return Array.isArray(data) ? data : data.items ?? [];
+const visibleAdminUserEmails = new Set([
+  "anna@test.com",
+  "anna.kiliarova@nure.ua",
+  "admin@test.com",
+]);
+
+const getItems = <T,>(data: T[] | { items?: T[]; users?: T[] }) => {
+  return Array.isArray(data) ? data : data.items ?? data.users ?? [];
 };
 
 function AdminUsers() {
@@ -28,7 +35,11 @@ function AdminUsers() {
   const loadUsers = async () => {
     try {
       const data = await getUsers();
-      setUsers(getItems<AdminUser>(data));
+      setUsers(
+        getItems<AdminUser>(data).filter((user) =>
+          visibleAdminUserEmails.has(user.email.toLowerCase()),
+        ),
+      );
     } catch (error) {
       console.log(error);
     }
@@ -53,9 +64,9 @@ function AdminUsers() {
     }
   };
 
-  const handleBlockUser = async (userId: string | number) => {
+  const handleBlockUser = async (user: AdminUser) => {
     try {
-      await blockUser(userId);
+      await blockUser(user.id, !(user.isBlocked ?? user.is_blocked ?? false));
       await loadUsers();
     } catch (error) {
       console.log(error);
@@ -100,15 +111,20 @@ function AdminUsers() {
                     </span>
                   </td>
                   <td>
+                    {(() => {
+                      const isBlocked = user.isBlocked ?? user.is_blocked ?? false;
+                      return (
                     <span
                       className={
-                        user.isBlocked
+                        isBlocked
                           ? "badge badge-danger"
                           : "badge badge-success"
                       }
                     >
-                      {user.isBlocked ? t("blocked") : t("active")}
+                      {isBlocked ? t("blocked") : t("active")}
                     </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div className="grid">
@@ -127,9 +143,11 @@ function AdminUsers() {
                       <button
                         className="button button-danger"
                         type="button"
-                        onClick={() => handleBlockUser(user.id)}
+                        onClick={() => handleBlockUser(user)}
                       >
-                        {t("blockUser")}
+                        {(user.isBlocked ?? user.is_blocked ?? false)
+                          ? t("unblockUser")
+                          : t("blockUser")}
                       </button>
                     </div>
                   </td>

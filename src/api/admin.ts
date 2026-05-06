@@ -15,7 +15,10 @@ export const updateUserRole = async (
   return res.data;
 };
 
-export const blockUser = async (userId: string | number) => {
-  const res = await api.patch(`/admin/users/${userId}/block`);
+export const blockUser = async (
+  userId: string | number,
+  isBlocked: boolean,
+) => {
+  const res = await api.patch(`/admin/users/${userId}/block`, { isBlocked });
   return res.data;
 };
