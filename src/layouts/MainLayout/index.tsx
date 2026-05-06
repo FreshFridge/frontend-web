@@ -10,6 +10,10 @@ function MainLayout() {
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    if (!window.confirm(t("confirmLogout"))) {
+      return;
+    }
+
     auth.logout();
     navigate("/login", { replace: true });
   };
@@ -31,6 +35,9 @@ function MainLayout() {
           </NavLink>
           <NavLink className="nav-link" to="/fridges">
             {t("fridges")}
+          </NavLink>
+          <NavLink className="nav-link" to="/profile">
+            {t("profile")}
           </NavLink>
           {isAdmin() && (
             <NavLink className="nav-link" to="/admin/users">

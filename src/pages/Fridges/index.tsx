@@ -4,8 +4,10 @@ import {
   createFridge,
   createShelf,
   deleteFridge,
+  deleteShelf,
   getFridges,
   getShelves,
+  updateShelf,
 } from "../../api/fridges";
 
 type Fridge = {
@@ -31,8 +33,13 @@ function Fridges() {
   const [shelfName, setShelfName] = useState("");
   const [fridgeError, setFridgeError] = useState("");
   const [shelfError, setShelfError] = useState("");
+  const [editingShelfId, setEditingShelfId] = useState<string | number | null>(
+    null,
+  );
+  const [editingShelfName, setEditingShelfName] = useState("");
   const [isAddingFridge, setIsAddingFridge] = useState(false);
   const [isAddingShelf, setIsAddingShelf] = useState(false);
+  const [isSavingShelf, setIsSavingShelf] = useState(false);
 
   const selectedFridge = fridges.find(
     (fridge) => String(fridge.id) === String(selectedFridgeId),
@@ -67,6 +74,8 @@ function Fridges() {
 
   const handleSelectFridge = async (fridgeId: string) => {
     setShelfError("");
+    setEditingShelfId(null);
+    setEditingShelfName("");
     setSelectedFridgeId(fridgeId);
     await loadShelves(fridgeId);
   };
@@ -89,6 +98,10 @@ function Fridges() {
   };
 
   const handleDeleteFridge = async (fridgeId: string | number) => {
+    if (!window.confirm(t("confirmDeleteFridge"))) {
+      return;
+    }
+
     try {
       setFridgeError("");
       setShelfError("");
@@ -125,6 +138,58 @@ function Fridges() {
       setShelfError(t("shelfCreateFailed"));
     } finally {
       setIsAddingShelf(false);
+    }
+  };
+
+  const handleStartEditShelf = (shelf: Shelf) => {
+    setShelfError("");
+    setEditingShelfId(shelf.id);
+    setEditingShelfName(shelf.name || "");
+  };
+
+  const handleCancelEditShelf = () => {
+    setEditingShelfId(null);
+    setEditingShelfName("");
+    setShelfError("");
+  };
+
+  const handleUpdateShelf = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!editingShelfId || !selectedFridgeId) {
+      return;
+    }
+
+    try {
+      setIsSavingShelf(true);
+      setShelfError("");
+      await updateShelf(editingShelfId, { name: editingShelfName });
+      setEditingShelfId(null);
+      setEditingShelfName("");
+      await loadShelves(selectedFridgeId);
+    } catch (error) {
+      console.log(error);
+      setShelfError(t("shelfUpdateFailed"));
+    } finally {
+      setIsSavingShelf(false);
+    }
+  };
+
+  const handleDeleteShelf = async (shelfId: string | number) => {
+    if (!window.confirm(t("confirmDeleteShelf"))) {
+      return;
+    }
+
+    try {
+      setShelfError("");
+      await deleteShelf(shelfId);
+      if (String(editingShelfId) === String(shelfId)) {
+        handleCancelEditShelf();
+      }
+      await loadShelves(selectedFridgeId);
+    } catch (error) {
+      console.log(error);
+      setShelfError(t("shelfDeleteFailed"));
     }
   };
 
@@ -173,7 +238,18 @@ function Fridges() {
                   }
                   key={fridge.id}
                 >
-                  <h3>{fridge.name || fridge.id}</h3>
+                  <div className="item-card-header">
+                    <h3>{fridge.name || fridge.id}</h3>
+                    <button
+                      className="icon-button icon-button-danger"
+                      type="button"
+                      onClick={() => handleDeleteFridge(fridge.id)}
+                      aria-label={t("deleteFridge")}
+                      title={t("deleteFridge")}
+                    >
+                      ×
+                    </button>
+                  </div>
                   <p className="muted">
                     {t("id")}: {fridge.id}
                   </p>
@@ -188,13 +264,6 @@ function Fridges() {
                     {String(selectedFridgeId) === String(fridge.id)
                       ? t("selected")
                       : t("selectFridgeButton")}
-                  </button>
-                  <button
-                    className="button button-danger"
-                    type="button"
-                    onClick={() => handleDeleteFridge(fridge.id)}
-                  >
-                    {t("deleteFridge")}
                   </button>
                 </article>
               ))}
@@ -237,10 +306,64 @@ function Fridges() {
                 <div className="grid">
                   {shelves.map((shelf) => (
                     <article className="item-card" key={shelf.id}>
-                      <h3>{shelf.name || shelf.id}</h3>
+                      <div className="item-card-header">
+                        <h3>{shelf.name || shelf.id}</h3>
+                        <div className="icon-actions">
+                          <button
+                            className="icon-button"
+                            type="button"
+                            onClick={() => handleStartEditShelf(shelf)}
+                            aria-label={t("editShelf")}
+                            title={t("editShelf")}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            className="icon-button icon-button-danger"
+                            type="button"
+                            onClick={() => handleDeleteShelf(shelf.id)}
+                            aria-label={t("deleteShelf")}
+                            title={t("deleteShelf")}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
                       <p className="muted">
                         {t("id")}: {shelf.id}
                       </p>
+                      {String(editingShelfId) === String(shelf.id) && (
+                        <form
+                          className="inline-edit-form"
+                          onSubmit={handleUpdateShelf}
+                        >
+                          <input
+                            type="text"
+                            value={editingShelfName}
+                            onChange={(event) =>
+                              setEditingShelfName(event.target.value)
+                            }
+                            required
+                          />
+                          <div className="button-row">
+                            <button
+                              className="button"
+                              type="submit"
+                              disabled={isSavingShelf}
+                            >
+                              {isSavingShelf ? t("saving") : t("saveChanges")}
+                            </button>
+                            <button
+                              className="button button-secondary"
+                              type="button"
+                              onClick={handleCancelEditShelf}
+                              disabled={isSavingShelf}
+                            >
+                              {t("cancel")}
+                            </button>
+                          </div>
+                        </form>
+                      )}
                     </article>
                   ))}
                 </div>

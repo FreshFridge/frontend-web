@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getFridges } from "../../api/fridges";
 import { getLatestTelemetry, type TelemetryRecord } from "../../api/iot";
-import { getExpiringProducts, getProducts } from "../../api/products";
+import { getProducts } from "../../api/products";
+import { getProductFreshness } from "../../utils/productFreshness";
 
 const STALE_AFTER_MS = 30_000;
+const POLLING_INTERVAL_MS = 5000;
+const SELECTED_FRIDGE_STORAGE_KEY = "dashboardSelectedFridgeId";
 
 const getItems = <T,>(data: T[] | { items?: T[] }) => {
   return Array.isArray(data) ? data : data.items ?? [];
@@ -14,6 +17,8 @@ type Fridge = {
   id: string;
   name?: string;
 };
+
+type TelemetryStatus = "idle" | "loading" | "success" | "empty" | "error";
 
 const getNumberValue = (value?: number | string | null) => {
   if (value === null || value === undefined || value === "") {
@@ -40,28 +45,58 @@ const getTelemetryTime = (telemetry: TelemetryRecord | null) => {
 
 function Dashboard() {
   const { i18n, t } = useTranslation();
+  const telemetryRequestIdRef = useRef(0);
   const [productsCount, setProductsCount] = useState(0);
   const [fridgesCount, setFridgesCount] = useState(0);
+  const [expiredCount, setExpiredCount] = useState(0);
   const [expiringCount, setExpiringCount] = useState(0);
   const [fridges, setFridges] = useState<Fridge[]>([]);
   const [selectedFridgeId, setSelectedFridgeId] = useState("");
   const [telemetry, setTelemetry] = useState<TelemetryRecord | null>(null);
-  const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
+  const [telemetryStatus, setTelemetryStatus] =
+    useState<TelemetryStatus>("idle");
+  const [isTelemetryRefreshing, setIsTelemetryRefreshing] = useState(false);
 
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [productsData, fridgesData, expiringData] = await Promise.all([
+        const [productsData, fridgesData] = await Promise.all([
           getProducts(),
           getFridges(),
-          getExpiringProducts(),
         ]);
         const fridgeItems = getItems<Fridge>(fridgesData);
+        const productItems = getItems<{
+          expirationDate?: string | null;
+          freshnessScore?: number | null;
+          storagePenalty?: number | null;
+          lastFreshnessUpdate?: number | string | Date | null;
+        }>(productsData);
 
-        setProductsCount(productsData.total ?? getItems(productsData).length);
+        setProductsCount(productsData.total ?? productItems.length);
         setFridgesCount(fridgeItems.length);
-        setExpiringCount(getItems(expiringData).length);
+        setExpiredCount(
+          productItems.filter(
+            (product) => getProductFreshness(product).status === "EXPIRED",
+          ).length,
+        );
+        setExpiringCount(
+          productItems.filter(
+            (product) => getProductFreshness(product).status === "EXPIRING",
+          ).length,
+        );
         setFridges(fridgeItems);
+        setSelectedFridgeId((currentId) => {
+          const savedId = localStorage.getItem(SELECTED_FRIDGE_STORAGE_KEY);
+          const nextId = currentId || savedId || "";
+          const fridgeExists = fridgeItems.some((fridge) => fridge.id === nextId);
+
+          if (nextId && !fridgeExists) {
+            localStorage.removeItem(SELECTED_FRIDGE_STORAGE_KEY);
+            return "";
+          }
+
+          return fridgeExists ? nextId : "";
+        });
       } catch (error) {
         console.log(error);
       }
@@ -70,46 +105,80 @@ function Dashboard() {
     loadStats();
   }, []);
 
-  useEffect(() => {
-    if (!selectedFridgeId) {
+  const fetchLatestTelemetry = useCallback(async () => {
+    const fridgeId = selectedFridgeId;
+    if (!fridgeId) {
       setTelemetry(null);
+      setTelemetryStatus("idle");
+      setIsTelemetryRefreshing(false);
       return;
     }
 
-    const loadTelemetry = async () => {
-      try {
-        setIsTelemetryLoading(true);
-        const data = await getLatestTelemetry(selectedFridgeId);
-        setTelemetry(data ?? null);
-      } catch (error) {
-        console.log(error);
-        setTelemetry(null);
-      } finally {
-        setIsTelemetryLoading(false);
-      }
-    };
+    const requestId = telemetryRequestIdRef.current + 1;
+    telemetryRequestIdRef.current = requestId;
 
-    loadTelemetry();
-    const intervalId = window.setInterval(loadTelemetry, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, [selectedFridgeId]);
-
-  const refreshTelemetry = async () => {
-    if (!selectedFridgeId) {
-      return;
-    }
+    setTelemetryStatus((currentStatus) =>
+      currentStatus === "idle" ? "loading" : currentStatus,
+    );
+    setIsTelemetryRefreshing(true);
 
     try {
-      setIsTelemetryLoading(true);
-      const data = await getLatestTelemetry(selectedFridgeId);
+      const data = await getLatestTelemetry(fridgeId);
+      if (telemetryRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setTelemetry(data ?? null);
+      setTelemetryStatus(data ? "success" : "empty");
     } catch (error) {
+      if (telemetryRequestIdRef.current !== requestId) {
+        return;
+      }
+
       console.log(error);
       setTelemetry(null);
+      const status = (error as { response?: { status?: number } }).response
+        ?.status;
+      setTelemetryStatus(status === 404 ? "empty" : "error");
     } finally {
-      setIsTelemetryLoading(false);
+      if (telemetryRequestIdRef.current === requestId) {
+        setIsTelemetryRefreshing(false);
+      }
     }
+  }, [selectedFridgeId]);
+
+  useEffect(() => {
+    if (!selectedFridgeId) {
+      telemetryRequestIdRef.current += 1;
+      setTelemetry(null);
+      setTelemetryStatus("idle");
+      setIsTelemetryRefreshing(false);
+      return;
+    }
+
+    fetchLatestTelemetry();
+    const intervalId = window.setInterval(
+      fetchLatestTelemetry,
+      POLLING_INTERVAL_MS,
+    );
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchLatestTelemetry, selectedFridgeId]);
+
+  const handleFridgeChange = (fridgeId: string) => {
+    setSelectedFridgeId(fridgeId);
+    setTelemetry(null);
+    setTelemetryStatus(fridgeId ? "loading" : "idle");
+
+    if (fridgeId) {
+      localStorage.setItem(SELECTED_FRIDGE_STORAGE_KEY, fridgeId);
+    } else {
+      localStorage.removeItem(SELECTED_FRIDGE_STORAGE_KEY);
+    }
+  };
+
+  const refreshTelemetry = () => {
+    fetchLatestTelemetry();
   };
 
   const temperature = getNumberValue(telemetry?.temperature);
@@ -118,9 +187,13 @@ function Dashboard() {
   const telemetryTime = getTelemetryTime(telemetry);
   const telemetryDate = telemetryTime ? new Date(telemetryTime) : null;
   const isTelemetryStale =
+    telemetryStatus === "success" &&
     telemetryDate !== null &&
     !Number.isNaN(telemetryDate.getTime()) &&
     Date.now() - telemetryDate.getTime() > STALE_AFTER_MS;
+  const isInitialTelemetryLoading = telemetryStatus === "loading" && !telemetry;
+  const isTelemetryError = telemetryStatus === "error";
+  const isTelemetryEmpty = telemetryStatus === "empty";
 
   const formatDateTime = (value: string | null) => {
     if (!value) {
@@ -157,6 +230,10 @@ function Dashboard() {
           <span className="stat-value">{fridgesCount}</span>
         </article>
         <article className="card stat-card">
+          <span className="stat-label">{t("expired")}</span>
+          <span className="stat-value">{expiredCount}</span>
+        </article>
+        <article className="card stat-card">
           <span className="stat-label">{t("expiringSoon")}</span>
           <span className="stat-value">{expiringCount}</span>
         </article>
@@ -174,7 +251,7 @@ function Dashboard() {
                 <span>{t("fridge")}</span>
                 <select
                   value={selectedFridgeId}
-                  onChange={(event) => setSelectedFridgeId(event.target.value)}
+                  onChange={(event) => handleFridgeChange(event.target.value)}
                 >
                   <option value="">{t("selectFridge")}</option>
                   {fridges.map((fridge) => (
@@ -187,14 +264,26 @@ function Dashboard() {
             )}
             <button
               className="button button-secondary"
-              disabled={!selectedFridgeId || isTelemetryLoading}
+              disabled={!selectedFridgeId || isTelemetryRefreshing}
               type="button"
               onClick={refreshTelemetry}
             >
-              {isTelemetryLoading ? t("loading") : t("refresh")}
+              {isTelemetryRefreshing ? t("loading") : t("refresh")}
             </button>
           </div>
         </div>
+
+        {isInitialTelemetryLoading && (
+          <p className="muted dashboard-error">{t("loading")}</p>
+        )}
+
+        {isTelemetryError && (
+          <p className="form-error dashboard-error">{t("iotUnavailable")}</p>
+        )}
+
+        {isTelemetryEmpty && (
+          <p className="muted dashboard-error">{t("no_data")}</p>
+        )}
 
         {isTelemetryStale && (
           <p className="form-error dashboard-error">{t("staleData")}</p>

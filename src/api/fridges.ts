@@ -34,3 +34,15 @@ export const createShelf = async (
   const res = await api.post(`/fridges/${fridgeId}/shelves`, shelf);
   return res.data;
 };
+
+export const updateShelf = async (
+  shelfId: string | number,
+  shelf: ShelfPayload,
+) => {
+  const res = await api.put(`/shelves/${shelfId}`, shelf);
+  return res.data;
+};
+
+export const deleteShelf = async (shelfId: string | number) => {
+  await api.delete(`/shelves/${shelfId}`);
+};

@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Fridges from "./pages/Fridges";
 import Login from "./pages/Login";
 import Products from "./pages/Products";
+import Profile from "./pages/Profile";
 import Register from "./pages/Register";
 import { useAuth } from "./store/AuthContext";
 
@@ -29,6 +30,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />
             <Route path="/fridges" element={<Fridges />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/admin/users" element={<AdminUsers />} />
           </Route>
         </Route>

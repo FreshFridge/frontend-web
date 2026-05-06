@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "/api";
+const AUTH_LOGOUT_EVENT = "freshfridge:auth-logout";
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -13,7 +14,23 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  console.log("Request headers:", config.headers);
-
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
+
+export { AUTH_LOGOUT_EVENT };
