@@ -156,6 +156,7 @@ function Products() {
   const [productsError, setProductsError] = useState("");
   const [isProductsLoading, setIsProductsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [freshnessTick, setFreshnessTick] = useState(0);
 
   const loadProducts = async () => {
     try {
@@ -233,6 +234,14 @@ function Products() {
     loadFridges();
   }, []);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setFreshnessTick((value) => value + 1);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const productFridgeIds = useMemo(() => {
     return Array.from(
       new Set(
@@ -280,11 +289,7 @@ function Products() {
   }, [productFridgeIdsKey]);
 
   useEffect(() => {
-    if (products.length === 0) {
-      return;
-    }
-
-    setProducts((currentProducts) => {
+    const applyFreshnessUpdate = (currentProducts: Product[]) => {
       const nextProducts = currentProducts.map((product) => {
         const telemetry = product.fridgeId
           ? telemetryByFridgeId[String(product.fridgeId)]
@@ -293,6 +298,7 @@ function Products() {
 
         return {
           ...product,
+          freshnessScore: freshness.freshnessScore,
           storagePenalty: freshness.storagePenalty,
           lastFreshnessUpdate: freshness.lastFreshnessUpdate,
         };
@@ -314,8 +320,24 @@ function Products() {
       writeFreshnessStorage(stored);
 
       return nextProducts;
+    };
+
+    setProducts((currentProducts) => {
+      if (currentProducts.length === 0) {
+        return currentProducts;
+      }
+
+      return applyFreshnessUpdate(currentProducts);
     });
-  }, [telemetryByFridgeId]);
+
+    setExpiringProducts((currentProducts) => {
+      if (currentProducts.length === 0) {
+        return currentProducts;
+      }
+
+      return applyFreshnessUpdate(currentProducts);
+    });
+  }, [telemetryByFridgeId, freshnessTick]);
 
   const handleFridgeChange = async (fridgeId: string) => {
     setSelectedFridgeId(fridgeId);

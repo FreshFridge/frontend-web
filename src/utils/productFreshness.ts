@@ -69,7 +69,7 @@ const toTimestamp = (value?: number | string | Date | null) => {
 };
 
 const clampScore = (score: number) => Math.min(100, Math.max(0, score));
-const clampPenalty = (penalty: number) => Math.min(30, Math.max(0, penalty));
+const clampPenalty = (penalty: number) => Math.min(100, Math.max(0, penalty));
 
 export const getDaysUntilExpiration = (product: ProductFreshnessInput) => {
   const expirationDate = parseDateOnly(
@@ -113,6 +113,20 @@ export const getExpirationFreshness = (product: ProductFreshnessInput) => {
   }
 
   return 100;
+};
+
+const getAccumulatedStoragePenalty = (product: ProductFreshnessInput) => {
+  const explicitPenalty = toNumber(product.storagePenalty);
+  if (explicitPenalty !== null) {
+    return clampPenalty(explicitPenalty);
+  }
+
+  const storedFreshness = toNumber(product.freshnessScore);
+  if (storedFreshness === null) {
+    return 0;
+  }
+
+  return clampPenalty(getExpirationFreshness(product) - clampScore(storedFreshness));
 };
 
 export const hasTelemetryRisk = (telemetry: ProductTelemetryInput) => {
@@ -161,12 +175,7 @@ export const updateFreshness = (
   telemetry: ProductTelemetryInput,
   now = Date.now(),
 ) => {
-  const currentPenalty = clampPenalty(
-    toNumber(product.storagePenalty) ??
-      (product.freshnessScore === null || product.freshnessScore === undefined
-        ? 0
-        : 100 - clampScore(toNumber(product.freshnessScore) ?? 100)),
-  );
+  const currentPenalty = getAccumulatedStoragePenalty(product);
   const lastUpdate = toTimestamp(product.lastFreshnessUpdate) ?? now;
   const deltaSeconds = Math.max(0, (now - lastUpdate) / 1000);
   const temperature = toNumber(telemetry?.temperature);
@@ -174,14 +183,22 @@ export const updateFreshness = (
   const doorOpen = telemetry?.doorOpen ?? telemetry?.door_open ?? false;
 
   let damagePerSecond = 0;
-  if (temperature !== null && temperature > 8) damagePerSecond += 0.001;
-  if (humidity !== null && humidity > 75) damagePerSecond += 0.0007;
-  if (doorOpen) damagePerSecond += 0.0005;
+  if (temperature !== null && temperature > 8) {
+    damagePerSecond += 0.025 + Math.min(0.035, (temperature - 8) * 0.002);
+  }
+  if (humidity !== null && humidity > 75) {
+    damagePerSecond += 0.015 + Math.min(0.025, (humidity - 75) * 0.001);
+  }
+  if (doorOpen) damagePerSecond += 0.015;
 
   const damage = damagePerSecond * deltaSeconds;
+  const storagePenalty = clampPenalty(currentPenalty + damage);
 
   return {
-    storagePenalty: clampPenalty(currentPenalty + damage),
+    freshnessScore: Math.round(
+      clampScore(getExpirationFreshness(product) - storagePenalty),
+    ),
+    storagePenalty,
     lastFreshnessUpdate: now,
   };
 };
@@ -192,12 +209,7 @@ export const getProductFreshness = (
 ) => {
   const daysLeft = getDaysUntilExpiration(product);
   const expirationFreshness = getExpirationFreshness(product);
-  const storagePenalty = clampPenalty(
-    toNumber(product.storagePenalty) ??
-      (product.freshnessScore === null || product.freshnessScore === undefined
-        ? 0
-        : 100 - clampScore(toNumber(product.freshnessScore) ?? 100)),
-  );
+  const storagePenalty = getAccumulatedStoragePenalty(product);
   const finalFreshness =
     daysLeft !== null && daysLeft < 0
       ? 0
